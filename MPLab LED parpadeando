@@ -1,0 +1,61 @@
+LIST P=16F877A
+        INCLUDE <P16F877A.INC>
+
+        __CONFIG _FOSC_XT & _WDTE_OFF & _PWRTE_ON & _CP_OFF
+
+        ORG 0x00
+        GOTO INICIO
+
+;============================
+; Programa Principal
+;============================
+
+INICIO
+
+        BSF STATUS, RP0      ; Cambiar a Banco 1
+        CLRF TRISB           ; Puerto B como salida
+        BCF STATUS, RP0      ; Volver a Banco 0
+        CLRF PORTB           ; Apagar todo el puerto
+
+LOOP
+
+        BSF PORTB, 0         ; Encender LED (RB0)
+        CALL RETARDO
+
+        BCF PORTB, 0         ; Apagar LED
+        CALL RETARDO
+
+        GOTO LOOP            ; Repetir para siempre
+
+;============================
+; Subrutina de Retardo ~1s
+;============================
+
+RETARDO
+
+        MOVLW D'250'
+        MOVWF CONT1
+
+RET1
+        MOVLW D'250'
+        MOVWF CONT2
+
+RET2
+        DECFSZ CONT2, F
+        GOTO RET2
+
+        DECFSZ CONT1, F
+        GOTO RET1
+
+        RETURN
+
+;============================
+; Variables
+;============================
+
+        CBLOCK 0x20
+        CONT1
+        CONT2
+        ENDC
+
+        END
