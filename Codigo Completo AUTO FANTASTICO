@@ -1,0 +1,244 @@
+LIST P=16F877A
+INCLUDE <P16F877A.INC>
+
+__CONFIG _XT_OSC & _WDT_OFF & _PWRTE_ON & _LVP_OFF
+
+;================ VARIABLES =================
+CBLOCK 0x20
+    modo
+    i
+    temp
+    temp2
+    L
+    H
+ENDC
+
+ORG 0x00
+GOTO INICIO
+
+;================ INICIO ====================
+INICIO
+
+    BSF STATUS, RP0
+
+    MOVLW 0x06
+    MOVWF ADCON1
+
+    MOVLW 0x01
+    MOVWF TRISA
+
+    CLRF TRISB
+    CLRF TRISD
+
+    BCF STATUS, RP0
+
+    CLRF PORTB
+    CLRF PORTD
+    CLRF modo
+
+;================ LOOP ======================
+MAIN
+
+    MOVF modo, W
+    BTFSC STATUS, Z
+    GOTO SEQ1
+
+    MOVLW 1
+    SUBWF modo, W
+    BTFSC STATUS, Z
+    GOTO SEQ2
+
+    GOTO SEQ3
+
+;================ SECUENCIA 1 (KITT PERFECTO) =================
+SEQ1
+
+    MOVLW 0x07
+    MOVWF L
+    CLRF H
+
+; -------- SUBIDA ----------
+S1_SUBIR
+    CALL MOSTRAR_KITT
+    CALL DELAY_BOTON
+    BTFSC temp,0
+    GOTO CAMBIO1
+
+    BCF STATUS,C      ; 🔥 FIX CLAVE
+    RLF L,F
+    RLF H,F
+
+    MOVF H,W
+    XORLW 0xE0
+    BTFSC STATUS,Z
+    GOTO S1_BAJAR
+
+    GOTO S1_SUBIR
+
+; -------- BAJADA ----------
+S1_BAJAR
+    CALL MOSTRAR_KITT
+    CALL DELAY_BOTON
+    BTFSC temp,0
+    GOTO CAMBIO1
+
+    BCF STATUS,C      ; 🔥 FIX CLAVE
+    RRF H,F
+    RRF L,F
+
+    MOVF L,W
+    XORLW 0x07
+    BTFSC STATUS,Z
+    GOTO S1_SUBIR
+
+    GOTO S1_BAJAR
+
+CAMBIO1
+    MOVLW 1
+    MOVWF modo
+    GOTO MAIN
+
+;================ SECUENCIA 2 =================
+SEQ2
+    MOVLW 0
+    MOVWF i
+
+S2_IDA
+    MOVF i, W
+    CALL TABLA_CHOQUE
+    MOVWF PORTB
+    MOVWF PORTD
+
+    CALL DELAY_BOTON
+    BTFSC temp,0
+    GOTO CAMBIO2
+
+    INCF i, F
+    MOVLW 7
+    SUBWF i, W
+    BTFSS STATUS, C
+    GOTO S2_IDA
+
+    MOVLW 6
+    MOVWF i
+
+S2_VUELTA
+    MOVF i, W
+    CALL TABLA_CHOQUE
+    MOVWF PORTB
+    MOVWF PORTD
+
+    CALL DELAY_BOTON
+    BTFSC temp,0
+    GOTO CAMBIO2
+
+    DECF i, F
+    MOVF i, F
+    BTFSS STATUS, Z
+    GOTO S2_VUELTA
+
+    GOTO MAIN
+
+CAMBIO2
+    MOVLW 2
+    MOVWF modo
+    GOTO MAIN
+
+;================ SECUENCIA 3 =================
+SEQ3
+
+    MOVLW 0x55
+    MOVWF PORTB
+    MOVWF PORTD
+
+    CALL DELAY_BOTON
+    BTFSC temp,0
+    GOTO RESET
+
+    MOVLW 0xAA
+    MOVWF PORTB
+    MOVWF PORTD
+
+    CALL DELAY_BOTON
+    BTFSC temp,0
+    GOTO RESET
+
+    GOTO SEQ3
+
+RESET
+    CLRF modo
+    GOTO MAIN
+
+;================ MOSTRAR =================
+MOSTRAR_KITT
+    MOVF L,W
+    MOVWF PORTB
+    MOVF H,W
+    MOVWF PORTD
+    RETURN
+
+;================ DELAY + BOTÓN =================
+DELAY_BOTON
+    CLRF temp
+
+    MOVLW 80
+    MOVWF temp2
+
+DB1
+    CALL DELAY1MS
+
+    BTFSS PORTA,0
+    GOTO PRESION
+
+    DECFSZ temp2, F
+    GOTO DB1
+
+    RETURN
+
+PRESION
+    CALL DELAY20MS
+    BTFSS PORTA,0
+    GOTO CONFIRMAR
+    RETURN
+
+CONFIRMAR
+    BSF temp,0
+
+ESPERA
+    BTFSS PORTA,0
+    GOTO ESPERA
+
+    RETURN
+
+;================ DELAYS =================
+DELAY1MS
+    MOVLW D'250'
+    MOVWF temp
+D1
+    NOP
+    NOP
+    DECFSZ temp, F
+    GOTO D1
+    RETURN
+
+DELAY20MS
+    MOVLW 20
+    MOVWF temp2
+D20
+    CALL DELAY1MS
+    DECFSZ temp2, F
+    GOTO D20
+    RETURN
+
+;================ TABLA CHOQUE =================
+TABLA_CHOQUE
+    ADDWF PCL, F
+    RETLW 0x81
+    RETLW 0x42
+    RETLW 0x24
+    RETLW 0x18
+    RETLW 0x18
+    RETLW 0x24
+    RETLW 0x42
+
+END
