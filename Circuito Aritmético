@@ -1,0 +1,97 @@
+#include <xc.h>
+
+// CONFIG
+#pragma config FOSC = HS
+#pragma config WDTE = OFF
+#pragma config PWRTE = ON
+#pragma config BOREN = ON
+#pragma config LVP = OFF
+
+#define _XTAL_FREQ 20000000
+
+//  Lectura estable (anti-rebote)
+unsigned char leer_estable(volatile unsigned char *puerto){
+    unsigned char v1 = *puerto;
+    __delay_ms(5);
+    unsigned char v2 = *puerto;
+    if(v1 == v2) return v1;
+    else return v2;
+}
+
+void main() {
+
+    // ===== CONFIG =====
+    TRISA = 0xFF; // A
+    TRISE = 0x03; // RE0–RE1
+    TRISD = 0xFF; // B
+
+    TRISB = 0x00; // LEDs arriba (RB1–RB6)
+    TRISC = 0x00; // LEDs abajo (RC0–RC7)
+
+    ADCON1 = 0x06; // todo digital
+
+    unsigned char porta, porte, portd;
+    unsigned char Au, Ad, Bu, Bd;
+    unsigned int A, B, X;
+
+    while(1) {
+
+        //  LECTURA REAL (SIN INVERTIR)
+        porta = leer_estable(&PORTA);
+        porte = PORTE;
+        portd = leer_estable(&PORTD);
+
+        // ===== A =====
+        Au = porta & 0x0F;
+
+        Ad = ((porta >> 4) & 0x03)
+           | ((porte & 0x03) << 2);
+
+        // ===== B =====
+        Bu = portd & 0x0F;
+        Bd = (portd >> 4) & 0x0F;
+
+        // ===== VALIDACIÓN BCD =====
+        if (Au > 9 || Ad > 9 || Bu > 9 || Bd > 9) {
+            X = 0;
+        }
+        else {
+
+            // ===== CONVERSIÓN =====
+            A = (Ad * 10) + Au;
+            B = (Bd * 10) + Bu;
+
+            // ===== LÓGICA =====
+            if (A > B) {
+                X = A * B;
+            }
+            else if (A == B) {
+                X = A + B;
+            }
+            else {
+                if (A != 0) {
+                    X = B / A; // división entera
+                } else {
+                    X = 0;
+                }
+            }
+        }
+
+        // ===== SALIDA =====
+
+        //  PORTB (bits bajos, empezando en RB1)
+        PORTB = 0;
+
+        if (X & 0x01) PORTB |= (1 << 1);
+        if (X & 0x02) PORTB |= (1 << 2);
+        if (X & 0x04) PORTB |= (1 << 3);
+        if (X & 0x08) PORTB |= (1 << 4);
+        if (X & 0x10) PORTB |= (1 << 5);
+        if (X & 0x20) PORTB |= (1 << 6);
+
+        //  PORTC (bits altos)
+        PORTC = (X >> 6) & 0xFF;
+
+        __delay_ms(50);
+    }
+}
