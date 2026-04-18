@@ -1,0 +1,164 @@
+#include <xc.h>
+
+#pragma config FOSC = HS
+#pragma config WDTE = OFF
+#pragma config PWRTE = ON
+#pragma config BOREN = ON
+#pragma config LVP = OFF
+
+#define _XTAL_FREQ 20000000
+
+// =====================
+// MAPA TECLADO 3x4
+// =====================
+char mapa[4][3] = {
+    {'1','2','3'},
+    {'4','5','6'},
+    {'7','8','9'},
+    {'*','0','#'}
+};
+
+// =====================
+// LECTURA BASICA
+// =====================
+char leer_tecla() {
+
+    for(int fila=0; fila<4; fila++) {
+
+        PORTB |= 0x0F;           // filas en alto
+        PORTB &= ~(1 << fila);   // baja una fila
+
+        __delay_us(50);
+
+        if(RB4==0) return mapa[fila][0];
+        if(RB5==0) return mapa[fila][1];
+        if(RB6==0) return mapa[fila][2];
+    }
+
+    return 0;
+}
+
+// =====================
+// ANTIREBOTE REAL
+// =====================
+char leer_tecla_estable() {
+
+    char t;
+
+    // esperar tecla
+    do {
+        t = leer_tecla();
+    } while(t == 0);
+
+    __delay_ms(20); // anti-rebote
+
+    // confirmar
+    if(leer_tecla() != t) return 0;
+
+    // esperar que suelte
+    while(leer_tecla() != 0);
+
+    return t;
+}
+
+// =====================
+// MOSTRAR EN LEDS
+// =====================
+void mostrar_binario(unsigned int valor) {
+
+    PORTC = valor & 0x3F;          // bits 0–5 (RC0–RC5)
+    PORTD = (valor >> 6) & 0xFF;   // bits 6–13 (RD0–RD7)
+}
+
+// =====================
+// MAIN
+// =====================
+void main() {
+
+    ADCON1 = 0x06;
+
+    TRISB = 0xF0; // teclado
+    TRISC = 0x00; // LEDs bajos
+    TRISD = 0x00; // LEDs altos
+
+    PORTB = 0xF0;
+
+    int A = 0;
+    int B = 0;
+    char modo = 0;
+
+    mostrar_binario(0);
+
+    while(1) {
+
+        char tecla = leer_tecla_estable();
+
+        if(tecla == 0) continue;
+
+        // =====================
+        // INGRESO NUMEROS
+        // =====================
+        if(tecla >= '0' && tecla <= '9') {
+
+            if(modo == 0) {
+                if(A < 100)
+                    A = A*10 + (tecla - '0');
+
+                mostrar_binario(A);
+            }
+            else {
+                if(B < 100)
+                    B = B*10 + (tecla - '0');
+
+                mostrar_binario(B);
+            }
+        }
+
+        // =====================
+        // CAMBIAR A B
+        // =====================
+        else if(tecla == '#') {
+            modo = 1;
+            B = 0;
+            mostrar_binario(0);
+        }
+
+        // =====================
+        // CALCULAR
+        // =====================
+        else if(tecla == '*') {
+
+            unsigned int resultado = 0;
+
+            // A > B → multiplicación
+            if(A > B) {
+                resultado = A * B;
+            }
+
+            // A == B → suma
+            else if(A == B) {
+                resultado = A + B;
+            }
+
+            // A < B → división entera
+            else if(A < B) {
+
+                if(A == 0) {
+                    // ERROR → todos los LEDs
+                    PORTC = 0x3F;
+                    PORTD = 0xFF;
+                    continue;
+                }
+
+                resultado = B / A;
+            }
+
+            mostrar_binario(resultado);
+
+            // reset
+            A = 0;
+            B = 0;
+            modo = 0;
+        }
+    }
+}
