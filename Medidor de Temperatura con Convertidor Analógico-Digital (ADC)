@@ -1,0 +1,305 @@
+#include <xc.h>
+#include <stdio.h>
+
+#define _XTAL_FREQ 20000000
+
+//================================================
+// CONFIG PIC16F887
+//================================================
+#pragma config FOSC = HS
+#pragma config WDTE = OFF
+#pragma config PWRTE = ON
+#pragma config MCLRE = ON
+#pragma config CP = OFF
+#pragma config CPD = OFF
+#pragma config BOREN = ON
+#pragma config IESO = OFF
+#pragma config FCMEN = OFF
+#pragma config LVP = OFF
+
+//================================================
+// LCD
+//================================================
+#define RS RD0
+#define EN RD1
+
+//================================================
+// LEDs
+//================================================
+#define LED_ROJO   RA1
+#define LED_VERDE  RA2
+#define LED_AZUL   RA3
+
+//================================================
+// ESTADOS
+//================================================
+#define BAJA   0
+#define NORMAL 1
+#define ALTA   2
+
+//================================================
+// PROTOTIPOS
+//================================================
+void lcd_cmd(unsigned char cmd);
+void lcd_data(unsigned char data);
+void lcd_init();
+void lcd_string(const char *str);
+
+void ADC_Init();
+unsigned int ADC_Read();
+
+void beep_alto();
+void beep_bajo();
+
+//================================================
+// ADC
+//================================================
+void ADC_Init(){
+
+    ANSEL = 0x01;
+    // AN0 analógico
+
+    ANSELH = 0x00;
+    // PORTB digital
+
+    ADCON0 = 0x01;
+
+    ADCON1 = 0x80;
+}
+
+//================================================
+// ADC CON PROMEDIO
+//================================================
+unsigned int ADC_Read(){
+
+    unsigned long suma = 0;
+
+    for(int i=0; i<10; i++){
+
+        __delay_us(20);
+
+        GO_nDONE = 1;
+
+        while(GO_nDONE);
+
+        suma += ((ADRESH << 8) + ADRESL);
+
+        __delay_ms(2);
+    }
+
+    return (suma / 10);
+}
+
+//================================================
+// SONIDO AGUDO
+//================================================
+void beep_alto(){
+
+    for(int i=0; i<180; i++){
+
+        RC0 = 1;
+        __delay_us(200);
+
+        RC0 = 0;
+        __delay_us(200);
+    }
+}
+
+//================================================
+// SONIDO GRAVE
+//================================================
+void beep_bajo(){
+
+    for(int i=0; i<350; i++){
+
+        RC0 = 1;
+        __delay_us(350);
+
+        RC0 = 0;
+        __delay_us(350);
+    }
+}
+
+//================================================
+// LCD COMMAND
+//================================================
+void lcd_cmd(unsigned char cmd){
+
+    PORTD = (PORTD & 0x0F) | (cmd & 0xF0);
+
+    RS = 0;
+
+    EN = 1;
+    __delay_us(50);
+    EN = 0;
+
+    PORTD = (PORTD & 0x0F) | (cmd << 4);
+
+    EN = 1;
+    __delay_us(50);
+    EN = 0;
+
+    __delay_ms(2);
+}
+
+//================================================
+// LCD DATA
+//================================================
+void lcd_data(unsigned char data){
+
+    PORTD = (PORTD & 0x0F) | (data & 0xF0);
+
+    RS = 1;
+
+    EN = 1;
+    __delay_us(50);
+    EN = 0;
+
+    PORTD = (PORTD & 0x0F) | (data << 4);
+
+    EN = 1;
+    __delay_us(50);
+    EN = 0;
+
+    __delay_ms(2);
+}
+
+//================================================
+// LCD INIT
+//================================================
+void lcd_init(){
+
+    TRISD = 0x00;
+
+    __delay_ms(20);
+
+    lcd_cmd(0x02);
+    lcd_cmd(0x28);
+    lcd_cmd(0x0C);
+    lcd_cmd(0x06);
+    lcd_cmd(0x01);
+
+    __delay_ms(2);
+}
+
+//================================================
+// LCD STRING
+//================================================
+void lcd_string(const char *str){
+
+    while(*str){
+
+        lcd_data(*str++);
+    }
+}
+
+//================================================
+// MAIN
+//================================================
+void main(){
+
+    TRISA = 0x01;
+    // RA0 -> LM35
+    // RA1 RA2 RA3 -> LEDs
+
+    TRISC = 0x00;
+
+    TRISD = 0x00;
+
+    PORTA = 0x00;
+    PORTC = 0x00;
+    PORTD = 0x00;
+
+    ADC_Init();
+
+    lcd_init();
+
+    unsigned int adc;
+
+    float temp;
+
+    char buffer[16];
+
+    unsigned char estado = NORMAL;
+
+    while(1){
+
+        adc = ADC_Read();
+
+        // Conversión LM35
+        temp = (adc * 5.0 / 1023.0) * 100.0;
+
+        //================================================
+        // HISTÉRESIS
+        //================================================
+        if(temp < 24){
+
+            estado = BAJA;
+        }
+        else if(temp > 33){
+
+            estado = ALTA;
+        }
+        else if(temp >= 25 && temp <= 32){
+
+            estado = NORMAL;
+        }
+
+        //================================================
+        // LCD LINEA 1
+        //================================================
+        lcd_cmd(0x80);
+
+        sprintf(buffer, "Temp:%5.1f C", temp);
+
+        lcd_string(buffer);
+
+        //================================================
+        // LCD LINEA 2
+        //================================================
+        lcd_cmd(0xC0);
+
+        // APAGAR LEDs
+        LED_ROJO = 0;
+        LED_VERDE = 0;
+        LED_AZUL = 0;
+
+        //================================================
+        // TEMPERATURA BAJA
+        //================================================
+        if(estado == BAJA){
+
+            lcd_string("TEMP BAJA    ");
+
+            LED_AZUL = 1;
+
+            beep_alto();
+        }
+
+        //================================================
+        // TEMPERATURA ALTA
+        //================================================
+        else if(estado == ALTA){
+
+            lcd_string("TEMP ALTA    ");
+
+            LED_ROJO = 1;
+
+            beep_bajo();
+        }
+
+        //================================================
+        // TEMPERATURA NORMAL
+        //================================================
+        else{
+
+            lcd_string("TEMP NORMAL  ");
+
+            LED_VERDE = 1;
+
+            RC0 = 0;
+        }
+
+        __delay_ms(10);
+    }
+}
