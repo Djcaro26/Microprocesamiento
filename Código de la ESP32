@@ -1,0 +1,350 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <time.h>
+#include <Preferences.h>
+
+//================ WIFI =================
+
+const char* ssid = "HOME-A28A";
+const char* password = "Dm0B1958.19";
+
+//================ TELEGRAM =================
+
+String BOTtoken = "8900682450:AAGgmbIQzVYzu39uob1Mc0oICNeo9hiV-UM";
+
+String chat_id = "8769960615";
+
+//================ PINES DESDE PIC =================
+
+// RC6 -> GPIO4 -> SABOTAJE
+#define SABOTAJE_PIN 4
+
+// RC1 -> GPIO19 -> ACCESO EXITOSO
+#define ACCESO_PIN 19
+
+// RC0 -> GPIO5 -> 3 INTENTOS
+#define INTENTOS_PIN 5
+
+// RC7 -> GPIO18 -> CAJA CERRADA
+#define CERRADA_PIN 18
+
+// RE0 -> GPIO21 -> CONTRASEÑA CAMBIADA
+#define CAMBIO_PIN 21
+
+//================ MEMORIA =================
+
+Preferences preferences;
+
+int contadorAccesos = 0;
+
+//================ VARIABLES =================
+
+bool enviadoSabotaje = false;
+
+bool enviadoAcceso = false;
+
+bool enviadoIntentos = false;
+
+bool enviadaCajaCerrada = false;
+
+bool enviadoCambio = false;
+
+//================ TELEGRAM =================
+
+void enviarTelegram(String mensaje)
+{
+  HTTPClient http;
+
+  mensaje.replace(" ", "%20");
+
+  mensaje.replace("\n", "%0A");
+
+  String url =
+    "https://api.telegram.org/bot" +
+    BOTtoken +
+    "/sendMessage?chat_id=" +
+    chat_id +
+    "&text=" +
+    mensaje;
+
+  http.begin(url);
+
+  int httpCode = http.GET();
+
+  Serial.print("HTTP: ");
+
+  Serial.println(httpCode);
+
+  http.end();
+}
+
+//================ FECHA Y HORA =================
+
+String obtenerHora()
+{
+  struct tm timeinfo;
+
+  if(!getLocalTime(&timeinfo))
+  {
+    return "No disponible";
+  }
+
+  char fechaHora[120];
+
+  char dias[7][12] = {
+    "Domingo",
+    "Lunes",
+    "Martes",
+    "Miercoles",
+    "Jueves",
+    "Viernes",
+    "Sabado"
+  };
+
+  char meses[12][12] = {
+    "Enero",
+    "Febrero",
+    "Marzo",
+    "Abril",
+    "Mayo",
+    "Junio",
+    "Julio",
+    "Agosto",
+    "Septiembre",
+    "Octubre",
+    "Noviembre",
+    "Diciembre"
+  };
+
+  sprintf(
+    fechaHora,
+    "%s %02d de %s del %04d - %02d:%02d:%02d",
+    dias[timeinfo.tm_wday],
+    timeinfo.tm_mday,
+    meses[timeinfo.tm_mon],
+    timeinfo.tm_year + 1900,
+    timeinfo.tm_hour,
+    timeinfo.tm_min,
+    timeinfo.tm_sec
+  );
+
+  return String(fechaHora);
+}
+
+//================ SETUP =================
+
+void setup()
+{
+  Serial.begin(115200);
+
+  //================ PINES =================
+
+  pinMode(SABOTAJE_PIN, INPUT_PULLDOWN);
+
+  pinMode(ACCESO_PIN, INPUT);
+
+  pinMode(INTENTOS_PIN, INPUT_PULLDOWN);
+
+  pinMode(CERRADA_PIN, INPUT_PULLDOWN);
+
+  pinMode(CAMBIO_PIN, INPUT_PULLDOWN);
+
+  //================ MEMORIA =================
+
+  preferences.begin("cajafuerte", false);
+
+  contadorAccesos = preferences.getInt("contador", 0);
+
+  //================ WIFI =================
+
+  WiFi.begin(ssid, password);
+
+  Serial.print("Conectando WiFi");
+
+  while(WiFi.status() != WL_CONNECTED)
+  {
+    delay(500);
+
+    Serial.print(".");
+  }
+
+  Serial.println("");
+
+  Serial.println("WiFi conectado");
+
+  //================ HORA INTERNET =================
+
+  configTime(-5 * 3600, 0, "pool.ntp.org");
+
+  Serial.println("Sistema listo");
+}
+
+//================ LOOP =================
+
+void loop()
+{
+  int sabotaje = digitalRead(SABOTAJE_PIN);
+
+  int acceso = digitalRead(ACCESO_PIN);
+
+  int intentos = digitalRead(INTENTOS_PIN);
+
+  int cerrada = digitalRead(CERRADA_PIN);
+
+  int cambio = digitalRead(CAMBIO_PIN);
+
+  //=================================================
+  // ALERTA SABOTAJE
+  //=================================================
+
+  if(sabotaje == HIGH)
+  {
+    if(enviadoSabotaje == false)
+    {
+      String mensaje;
+
+      mensaje = "🚨 ALERTA CAJA FUERTE\n\n";
+
+      mensaje += "Camara tapada o sabotaje detectado\n\n";
+
+      mensaje += "Fecha y hora:\n";
+
+      mensaje += obtenerHora();
+
+      enviarTelegram(mensaje);
+
+      enviadoSabotaje = true;
+    }
+  }
+  else
+  {
+    enviadoSabotaje = false;
+  }
+
+  //=================================================
+  // ALERTA 3 INTENTOS
+  //=================================================
+
+  if(intentos == HIGH)
+  {
+    if(enviadoIntentos == false)
+    {
+      String mensaje;
+
+      mensaje = "⚠️ ALERTA DE SEGURIDAD\n\n";
+
+      mensaje += "3 intentos fallidos detectados\n\n";
+
+      mensaje += "Fecha y hora:\n";
+
+      mensaje += obtenerHora();
+
+      enviarTelegram(mensaje);
+
+      enviadoIntentos = true;
+    }
+  }
+  else
+  {
+    enviadoIntentos = false;
+  }
+
+  //=================================================
+  // ACCESO EXITOSO
+  //=================================================
+
+  if(acceso == HIGH)
+  {
+    delay(100);
+
+    if(digitalRead(ACCESO_PIN) == HIGH)
+    {
+      if(enviadoAcceso == false)
+      {
+        contadorAccesos++;
+
+        preferences.putInt("contador", contadorAccesos);
+
+        String mensaje;
+
+        mensaje = "✅ ACCESO EXITOSO\n\n";
+
+        mensaje += "Caja fuerte desbloqueada correctamente\n\n";
+
+        mensaje += "Cantidad total de accesos:\n";
+
+        mensaje += String(contadorAccesos);
+
+        mensaje += "\n\nFecha y hora:\n";
+
+        mensaje += obtenerHora();
+
+        enviarTelegram(mensaje);
+
+        enviadoAcceso = true;
+      }
+    }
+  }
+  else
+  {
+    enviadoAcceso = false;
+  }
+
+  //=================================================
+  // CAJA CERRADA
+  //=================================================
+
+  if(cerrada == HIGH)
+  {
+    if(enviadaCajaCerrada == false)
+    {
+      String mensaje;
+
+      mensaje = "🔒 CAJA FUERTE CERRADA\n\n";
+
+      mensaje += "La caja fuerte fue cerrada correctamente\n\n";
+
+      mensaje += "Fecha y hora:\n";
+
+      mensaje += obtenerHora();
+
+      enviarTelegram(mensaje);
+
+      enviadaCajaCerrada = true;
+    }
+  }
+  else
+  {
+    enviadaCajaCerrada = false;
+  }
+
+  //=================================================
+  // CONTRASEÑA CAMBIADA
+  //=================================================
+
+  if(cambio == HIGH)
+  {
+    if(enviadoCambio == false)
+    {
+      String mensaje;
+
+      mensaje = "🔑 CONTRASEÑA CAMBIADA\n\n";
+
+      mensaje += "La clave de la caja fuerte fue modificada\n\n";
+
+      mensaje += "Fecha y hora:\n";
+
+      mensaje += obtenerHora();
+
+      enviarTelegram(mensaje);
+
+      enviadoCambio = true;
+    }
+  }
+  else
+  {
+    enviadoCambio = false;
+  }
+
+  delay(100);
+}
